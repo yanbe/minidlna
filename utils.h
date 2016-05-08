@@ -95,5 +95,7 @@ const char *mime_to_ext(const char * mime);
 /* Others */
 int make_dir(char * path, mode_t mode);
 unsigned int DJBHash(uint8_t *data, int len);
+double normalize_to_sec(const char * hms_or_sec);
+int is_hms_format(const char * hms_or_sec);
 
 #endif
