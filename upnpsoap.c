@@ -1063,6 +1063,15 @@ callback(void *args, int argc, char **argv, char **azColName)
 						add_res(size, duration, bitrate, sampleFrequency, nrAudioChannels,
 							resolution, dlna_buf, mime, detailID, ext, passed_args);
 					}
+
+					DPRINTF(E_DEBUG, L_HTTP, "Title: %s -  %d Returned / %d childCount\n",
+								title, passed_args->returned, passed_args->childCount);
+
+					ret = strcatf(str, "&lt;pxn:groupTopFlag&gt;%d&lt;/pxn:groupTopFlag&gt;"
+							   "&lt;pxn:groupID&gt;%s&lt;/pxn:groupID&gt;"
+							   "&lt;pxn:groupTitle&gt;%s&lt;/pxn:groupTitle&gt;"
+							   "&lt;pxn:groupMemberNum&gt;%d&lt;/pxn:groupMemberNum&gt;",
+							   passed_args->returned == passed_args->childCount, parent, passed_args->parentTitle, passed_args->childCount);
 					break;
 				case ESamsungSeriesCDE:
 				case ELGDevice:
@@ -1325,8 +1334,11 @@ BrowseContentDirectory(struct upnphttp * h, const char * action)
 		if (!where[0])
 			sqlite3_snprintf(sizeof(where), where, "PARENT_ID = '%q'", ObjectID);
 
-		if (!totalMatches)
+		if (!totalMatches) {
 			totalMatches = get_child_count(ObjectID, magic);
+			args.childCount = totalMatches;
+			args.parentTitle = sql_get_text_field(db, "SELECT d.TITLE FROM OBJECTS o LEFT JOIN DETAILS d ON (d.ID = o.DETAIL_ID) WHERE OBJECT_ID='%q'", ObjectID);
+		}
 		ret = 0;
 		if (SortCriteria && !orderBy)
 		{
@@ -1365,14 +1377,16 @@ BrowseContentDirectory(struct upnphttp * h, const char * action)
 			SoapError(h, 709, "Unsupported or invalid sort criteria");
 			goto browse_error;
 		}
-
 		sql = sqlite3_mprintf("SELECT %s, %s, %s, " COLUMNS
 		                      "from OBJECTS o left join DETAILS d on (d.ID = o.DETAIL_ID)"
-				      " where %s %s limit %d, %d;",
+				      " where %s order by d.date limit %d, %d;",
 				      objectid_sql, parentid_sql, refid_sql,
-				      where, THISORNUL(orderBy), StartingIndex, RequestedCount);
+				      where, StartingIndex, RequestedCount);
 		DPRINTF(E_DEBUG, L_HTTP, "Browse SQL: %s\n", sql);
 		ret = sqlite3_exec(db, sql, callback, (void *) &args, &zErrMsg);
+		if (args.parentTitle) {
+			sqlite3_free(args.parentTitle);
+		}
 	}
 	if( (ret != SQLITE_OK) && (zErrMsg != NULL) )
 	{
@@ -1806,7 +1820,7 @@ SearchContentDirectory(struct upnphttp * h, const char * action)
 	                      (*ContainerID == '*') ? NULL :
 	                      sqlite3_mprintf("UNION ALL " SELECT_COLUMNS
 	                                      "from OBJECTS o left join DETAILS d on (d.ID = o.DETAIL_ID)"
-	                                      " where OBJECT_ID = '%q' and (%s) ", ContainerID, where),
+	                                      " where OBJECT_ID = '%q' and (%s) ORDER BY d.date", ContainerID, where),
 	                      orderBy, StartingIndex, RequestedCount);
 	DPRINTF(E_DEBUG, L_HTTP, "Search SQL: %s\n", sql);
 	ret = sqlite3_exec(db, sql, callback, (void *) &args, &zErrMsg);
